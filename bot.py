@@ -8,10 +8,17 @@ CHAT_ID = os.getenv("CHAT_ID")
 URL_TELEGRAM = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 API_URL = "https://api-cs.casino.org/svc-evolution-game-events/api/bacbo?page=0&size=20&sort=data.settledAt,desc"
 
+# 🔐 HEADERS para evitar bloqueo
+HEADERS = {
+    "User-Agent": "Mozilla/5.0",
+    "Accept": "application/json"
+}
+
 historial = []
 ultimo_resultado = None
 ultimo_envio = 0
 ya_iniciado = False
+ultimo_mensaje_detectando = 0
 
 # 📊 STATS
 wins = 0
@@ -25,30 +32,46 @@ def enviar(msg):
             "chat_id": CHAT_ID,
             "text": msg
         })
-    except:
-        print("Error enviando mensaje")
+    except Exception as e:
+        print("Error enviando mensaje:", e)
 
 # ---------------- API SEGURA ----------------
 def obtener():
     try:
-        r = requests.get(API_URL, timeout=10)
+        r = requests.get(API_URL, headers=HEADERS, timeout=10)
+
+        if r.status_code != 200:
+            print("Error API:", r.status_code)
+            return []
+
         data = r.json()
-        return data.get("data", [])
-    except:
-        print("Error obteniendo datos")
+
+        if "data" not in data:
+            print("Formato inesperado:", data)
+            return []
+
+        return data["data"]
+
+    except Exception as e:
+        print("Error obteniendo datos:", e)
         return []
 
 def procesar(data):
     lista = []
-    for r in data:
-        res = r["data"]["winner"]
 
-        if res == "PlayerWon":
-            lista.append("🔵")
-        elif res == "BankerWon":
-            lista.append("🔴")
-        else:
-            lista.append("🟡")
+    for r in data:
+        try:
+            res = r["data"]["winner"]
+
+            if res == "PlayerWon":
+                lista.append("🔵")
+            elif res == "BankerWon":
+                lista.append("🔴")
+            else:
+                lista.append("🟡")
+
+        except:
+            continue
 
     return lista[::-1]
 
@@ -61,11 +84,11 @@ def detectar(hist):
 
     ult = filtrado[-6:]
 
-    # 🔥 patrón fuerte
+    # 🔥 tendencia fuerte
     if ult[-1] == ult[-2] == ult[-3]:
         return ult[-1]
 
-    # 🔥 rompimiento
+    # 🔥 cambio de patrón
     if ult[-3] == ult[-2] and ult[-1] != ult[-2]:
         return ult[-1]
 
@@ -77,43 +100,40 @@ def msg_entrada(color):
 
     return f"""✅ ENTRADA CONFIRMADA ✅
 
-🎰 Juego: Bac Bo - Evolution
+🎰 Bac Bo - Evolution
 
 🧨 INGRESAR DESPUÉS: {contra}
 🔥 APOSTAR EN: {color}
 
-🔒 PROTEGER EMPATE con 10% (Opcional)
-
-🔁 MÁXIMO 1 GALE
+🔒 Empate 10% (Opcional)
+🔁 Máx 1 GALE
 """
 
 def msg_green(color):
-    return f"""🍀🍀🍀 GREEN!!! 🍀🍀🍀
+    return f"""🍀 GREEN 🍀
 
-✅ RESULTADO: COLOR {color} / 🟡
-
-¡Hemos acertado de nuevo!
+Resultado: {color} / 🟡
 """
 
 def msg_red():
-    return "❌❌❌ RED ❌❌❌"
+    return "❌ RED"
 
 def msg_gale():
     return "⚠️ GALE 1"
 
 def msg_stats():
     total = wins + losses
+
     if total == 0:
         return
 
     porcentaje = (wins / total) * 100
 
-    enviar(f"""🚀 Resultados hasta el momento:
+    enviar(f"""📊 STATS
 
 🟢 {wins}   🔴 {losses}
-
-🎯 Asertividad {porcentaje:.2f}%
-🔥 Racha actual: {racha}
+🎯 {porcentaje:.2f}%
+🔥 Racha: {racha}
 """)
 
 # ---------------- LOOP ----------------
@@ -123,12 +143,16 @@ gale = 0
 
 while True:
     try:
-        # 🔥 SOLO UNA VEZ
         if not ya_iniciado:
-            enviar("🚀 BOT BAC BO VIP ACTIVADO")
+            enviar("🚀 BOT BAC BO PRO ACTIVADO")
             ya_iniciado = True
 
         data = obtener()
+
+        if not data:
+            time.sleep(5)
+            continue
+
         historial = procesar(data)
 
         if not historial:
@@ -137,22 +161,27 @@ while True:
 
         ultimo = historial[-1]
 
-        # 🔥 detectar solo resultado nuevo
+        # evitar duplicados
         if ultimo == ultimo_resultado:
             time.sleep(5)
             continue
 
         ultimo_resultado = ultimo
 
-        print(historial[-10:])
+        print("Historial:", historial[-10:])
 
         tiempo = time.time()
+
+        # 🔎 MENSAJE DETECTANDO (cada 60s)
+        if tiempo - ultimo_mensaje_detectando > 60 and not en_jugada:
+            enviar("🔎 Detectando señal...")
+            ultimo_mensaje_detectando = tiempo
 
         # 🎯 ENTRADA
         if not en_jugada:
             posible = detectar(historial)
 
-            if posible and (tiempo - ultimo_envio > 240):
+            if posible and (tiempo - ultimo_envio > 180):
                 enviar(msg_entrada(posible))
 
                 en_jugada = True
@@ -181,12 +210,12 @@ while True:
                     racha = 0
                     en_jugada = False
 
-        # 📈 STATS cada 5 operaciones
+        # 📈 STATS cada 5
         if (wins + losses) > 0 and (wins + losses) % 5 == 0:
             msg_stats()
 
         time.sleep(5)
 
     except Exception as e:
-        print("Error:", e)
+        print("Error general:", e)
         time.sleep(10)
