@@ -25,14 +25,17 @@ detectando = False
 # 📩 TELEGRAM
 # =========================
 def enviar_mensaje(texto):
-    requests.post(URL_TELEGRAM, data={
-        "chat_id": CHAT_ID,
-        "text": texto
-    })
+    try:
+        requests.post(URL_TELEGRAM, data={
+            "chat_id": CHAT_ID,
+            "text": texto
+        })
+    except:
+        print("Error enviando mensaje")
 
 
 # =========================
-# 🧠 ANALISIS PRO (BALANCEADO)
+# 🧠 ANALISIS
 # =========================
 def analizar_pro():
     if len(historial) < 4:
@@ -54,7 +57,7 @@ def analizar_pro():
     if azules_count >= 3:
         return "azul"
 
-    # ⚡ Alternancia (suave)
+    # ⚡ Continuación
     if ultimos[-1] != ultimos[-2]:
         return "continuar"
 
@@ -67,7 +70,6 @@ def analizar_pro():
 def generar_senal_pro():
     analisis = analizar_pro()
 
-    # fallback inteligente
     if not analisis:
         ultimos = historial[-3:]
         if ultimos.count("🔴") > ultimos.count("🔵"):
@@ -101,11 +103,9 @@ def detectar_oportunidad():
 
     ultimos = historial[-3:]
 
-    # 2 iguales → posible racha
     if ultimos[-1] == ultimos[-2]:
         return True
 
-    # ruptura
     if ultimos[-3] == ultimos[-2] and ultimos[-1] != ultimos[-2]:
         return True
 
@@ -113,10 +113,10 @@ def detectar_oportunidad():
 
 
 # =========================
-# 🧾 MENSAJES (ESTILO TUYO)
+# 🧾 MENSAJES
 # =========================
 def mensaje_detectando():
-    return f"""
+    return """
 ⚠️ DETECTANDO POSIBLE OPORTUNIDAD
 
 🎰 Juego: Bac Bo - Evolution
@@ -138,7 +138,7 @@ def mensaje_senal(color):
 
 
 def mensaje_green():
-    return f"""
+    return """
 🍀🍀🍀 GREEN!!! 🍀🍀🍀
 
 ✅ RESULTADO: COLOR 🔴/🟠
@@ -148,7 +148,7 @@ def mensaje_green():
 
 
 def mensaje_red():
-    return f"""
+    return """
 ❌ RED ❌
 
 Seguimos con gestión.
@@ -168,29 +168,46 @@ def mensaje_stats():
 
 
 # =========================
-# 📡 API BAC BO
+# 📡 API ROBUSTA (FIX ERROR)
 # =========================
 def obtener_resultados():
     try:
-        res = requests.get(API_URL).json()
-        juegos = res["content"]
+        res = requests.get(API_URL)
+        data = res.json()
+
+        # Detectar estructura
+        if isinstance(data, dict) and "content" in data:
+            juegos = data["content"]
+        elif isinstance(data, list):
+            juegos = data
+        else:
+            print("Formato inesperado:", data)
+            return []
 
         resultados = []
 
         for juego in juegos:
-            game_id = juego["id"]
+            try:
+                game_id = juego.get("id")
 
-            player = juego["data"]["playerScore"]
-            banker = juego["data"]["bankerScore"]
+                info = juego.get("data", {})
+                player = info.get("playerScore")
+                banker = info.get("bankerScore")
 
-            if player > banker:
-                color = "🔵"
-            elif banker > player:
-                color = "🔴"
-            else:
-                continue
+                if player is None or banker is None:
+                    continue
 
-            resultados.append((game_id, color))
+                if player > banker:
+                    color = "🔵"
+                elif banker > player:
+                    color = "🔴"
+                else:
+                    continue
+
+                resultados.append((game_id, color))
+
+            except Exception as e:
+                print("Error juego:", e)
 
         return resultados[::-1]
 
@@ -207,7 +224,7 @@ def main():
     global greens, rojos
     global senal_actual, gale_actual, detectando
 
-    print("Bot PRO corriendo...")
+    print("Bot PRO activo...")
 
     while True:
         resultados = obtener_resultados()
@@ -222,9 +239,7 @@ def main():
 
             print("Nuevo resultado:", color)
 
-            # =========================
-            # 🎯 EVALUAR SEÑAL
-            # =========================
+            # 🎯 Evaluar señal
             if senal_actual:
                 if color == senal_actual:
                     greens += 1
@@ -242,17 +257,13 @@ def main():
                         senal_actual = None
                         gale_actual = 0
 
-            # =========================
-            # 👀 DETECTANDO
-            # =========================
+            # 👀 Detectando
             if not senal_actual and not detectando:
                 if detectar_oportunidad():
                     detectando = True
                     enviar_mensaje(mensaje_detectando())
 
-            # =========================
-            # 🎯 GENERAR ENTRADA
-            # =========================
+            # 🎯 Nueva entrada
             if not senal_actual:
                 nueva = generar_senal_pro()
 
