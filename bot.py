@@ -15,8 +15,10 @@ greens = 0
 rojos = 0
 
 MAX_GALE = 1
+
 senal_actual = None
 gale_actual = 0
+detectando = False
 
 
 # =========================
@@ -30,53 +32,48 @@ def enviar_mensaje(texto):
 
 
 # =========================
-# 🧠 ANALISIS PRO
+# 🧠 ANALISIS PRO (BALANCEADO)
 # =========================
 def analizar_pro():
-    if len(historial) < 6:
+    if len(historial) < 4:
         return None
 
-    ultimos = historial[-6:]
+    ultimos = historial[-4:]
 
     rojos_count = ultimos.count("🔴")
     azules_count = ultimos.count("🔵")
 
-    # 🚫 EVITAR CAOS (alternancia total)
-    alternando = True
-    for i in range(len(ultimos) - 1):
-        if ultimos[i] == ultimos[i + 1]:
-            alternando = False
-            break
-
-    if alternando:
-        return None
-
-    # 🔥 RACHA FUERTE
+    # 🔥 Racha
     if ultimos[-1] == ultimos[-2] == ultimos[-3]:
         return "contrario"
 
-    # 📈 TENDENCIA
-    if rojos_count >= 4:
+    # 📈 Tendencia
+    if rojos_count >= 3:
         return "rojo"
 
-    if azules_count >= 4:
+    if azules_count >= 3:
         return "azul"
 
-    # ⚡ RUPTURA
-    if ultimos[-2] == ultimos[-3] == ultimos[-4] and ultimos[-1] != ultimos[-2]:
+    # ⚡ Alternancia (suave)
+    if ultimos[-1] != ultimos[-2]:
         return "continuar"
 
     return None
 
 
 # =========================
-# 🎯 SEÑAL
+# 🎯 GENERAR SEÑAL
 # =========================
 def generar_senal_pro():
     analisis = analizar_pro()
 
+    # fallback inteligente
     if not analisis:
-        return None
+        ultimos = historial[-3:]
+        if ultimos.count("🔴") > ultimos.count("🔵"):
+            return "🔴"
+        else:
+            return "🔵"
 
     ultimo = historial[-1]
 
@@ -96,24 +93,36 @@ def generar_senal_pro():
 
 
 # =========================
-# 🚫 FILTRO EXTRA
+# ⚠️ DETECTAR OPORTUNIDAD
 # =========================
-def filtro_calidad():
-    if len(historial) < 6:
+def detectar_oportunidad():
+    if len(historial) < 3:
         return False
 
-    ultimos = historial[-6:]
+    ultimos = historial[-3:]
 
-    # 3 vs 3 = inestable
-    if ultimos.count("🔴") == 3 and ultimos.count("🔵") == 3:
-        return False
+    # 2 iguales → posible racha
+    if ultimos[-1] == ultimos[-2]:
+        return True
 
-    return True
+    # ruptura
+    if ultimos[-3] == ultimos[-2] and ultimos[-1] != ultimos[-2]:
+        return True
+
+    return False
 
 
 # =========================
-# 🧾 MENSAJES (TUS DISEÑOS)
+# 🧾 MENSAJES (ESTILO TUYO)
 # =========================
+def mensaje_detectando():
+    return f"""
+⚠️ DETECTANDO POSIBLE OPORTUNIDAD
+
+🎰 Juego: Bac Bo - Evolution
+"""
+
+
 def mensaje_senal(color):
     return f"""
 ✅ ENTRADA CONFIRMADA ✅
@@ -179,7 +188,7 @@ def obtener_resultados():
             elif banker > player:
                 color = "🔴"
             else:
-                continue  # ignorar empate
+                continue
 
             resultados.append((game_id, color))
 
@@ -196,7 +205,7 @@ def obtener_resultados():
 def main():
     global ultimo_id, historial
     global greens, rojos
-    global senal_actual, gale_actual
+    global senal_actual, gale_actual, detectando
 
     print("Bot PRO corriendo...")
 
@@ -214,7 +223,7 @@ def main():
             print("Nuevo resultado:", color)
 
             # =========================
-            # 🎯 EVALUAR SEÑAL ACTIVA
+            # 🎯 EVALUAR SEÑAL
             # =========================
             if senal_actual:
                 if color == senal_actual:
@@ -234,15 +243,24 @@ def main():
                         gale_actual = 0
 
             # =========================
-            # 🧠 NUEVA SEÑAL (PRO)
+            # 👀 DETECTANDO
+            # =========================
+            if not senal_actual and not detectando:
+                if detectar_oportunidad():
+                    detectando = True
+                    enviar_mensaje(mensaje_detectando())
+
+            # =========================
+            # 🎯 GENERAR ENTRADA
             # =========================
             if not senal_actual:
-                if filtro_calidad():
-                    nueva = generar_senal_pro()
+                nueva = generar_senal_pro()
 
-                    if nueva:
-                        senal_actual = nueva
-                        enviar_mensaje(mensaje_senal(senal_actual))
+                if nueva:
+                    senal_actual = nueva
+                    gale_actual = 0
+                    detectando = False
+                    enviar_mensaje(mensaje_senal(senal_actual))
 
         time.sleep(5)
 
