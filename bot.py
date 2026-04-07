@@ -1,199 +1,154 @@
-import asyncio
 import requests
-from telegram import Bot
+import time
+import os
+import random
 
-TOKEN = "7961061028:AAGWm-kKUcGmYm5Z6K50-B1mge-yTU7642g"
-CHAT_ID = "5998657823"
+TOKEN = os.getenv("7961061028:AAGWm-kKUcGmYm5Z6K50-B1mge-yTU7642g")
+CHAT_ID = os.getenv("5998657823")
 
-URL = "https://api-cs.casino.org/svc-evolution-game-events/api/bacbo?page=0&size=10&sort=data.settledAt,desc&duration=30&wheelResults=PlayerWon,BankerWon,Tie"
+URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
 historial = []
-senal_activa = None
-gale = 0
 
-# 📊 stats
-greens = 0
-rojas = 0
+# 📊 ESTADÍSTICAS
+wins = 0
+losses = 0
 racha = 0
+max_racha = 0
 
-def convertir(resultado):
-    if resultado == "PlayerWon":
-        return "🔵"
-    elif resultado == "BankerWon":
-        return "🔴"
-    elif resultado == "Tie":
-        return "🟡"
+# ---------------- TELEGRAM ----------------
+def enviar_telegram(msg):
+    requests.post(URL, data={
+        "chat_id": CHAT_ID,
+        "text": msg,
+        "parse_mode": "HTML"
+    })
+
+# ---------------- API (CAMBIA POR LA REAL) ----------------
+def obtener_resultado():
+    return random.choice(["🔵", "🔴", "🟡"])
+
+# ---------------- DETECTOR PRO ----------------
+def detectar_senal(hist):
+    if len(hist) < 4:
+        return None
+
+    # 🔥 REPETICIÓN
+    if hist[-1] == hist[-2]:
+        return hist[-1]
+
+    # 🔥 ALTERNANCIA
+    if hist[-1] != hist[-2] and hist[-2] != hist[-3]:
+        return hist[-1]
+
+    # 🔥 ROMPIMIENTO
+    if hist[-3] == hist[-2] and hist[-1] != hist[-2]:
+        return hist[-1]
+
     return None
 
-def calcular_precision():
-    total = greens + rojas
+# ---------------- MENSAJES ----------------
+def mensaje_detectando():
+    return """⚠️ DETECTANDO OPORTUNIDAD
+
+🎰 Bac Bo - Evolution
+📊 Analizando mercado...
+"""
+
+def mensaje_entrada(color):
+    contra = "🔴" if color == "🔵" else "🔵"
+
+    return f"""✅ ENTRADA CONFIRMADA ✅
+
+🎰 Juego: Bac Bo - Evolution
+
+📥 ENTRAR DESPUÉS DE: {contra}
+🎯 APOSTAR: {color}
+
+🔒 PROTEGER EMPATE 10% (Opcional)
+
+🔁 MÁXIMO 1 GALE
+"""
+
+def mensaje_green(color):
+    return f"""🍀🍀🍀 GREEN!!! 🍀🍀🍀
+
+✅ RESULTADO: {color} / 🟡
+
+¡Hemos acertado de nuevo! 💰
+"""
+
+def mensaje_gale():
+    return "⚠️ GALE 1"
+
+def mensaje_stats():
+    total = wins + losses
     if total == 0:
-        return 0
-    return int((greens / total) * 100)
+        return
 
-def zona_mala(hist):
-    if len(hist) >= 6:
-        if hist[-6:] == ["🔵","🔴","🔵","🔴","🔵","🔴"]:
-            return True
-        if hist[-6:] == ["🔴","🔵","🔴","🔵","🔴","🔵"]:
-            return True
-    return False
+    porcentaje = (wins / total) * 100
 
-async def enviar_senal(bot, color):
-    texto = f"""
-🧠 Analizando patrón avanzado...
+    enviar_telegram(f"""🚀 RESULTADOS HASTA AHORA
 
-🚨 SEÑAL CONFIRMADA 🚨
+🟢 {wins}   🔴 {losses}
 
-🎰 Bac Bo - Evolution  
+🎯 Asertividad: {porcentaje:.2f}%
+🔥 Racha actual: {racha}
+💰 Mejor racha: {max_racha}
+""")
 
-👉 Espera que salga: 🔵  
-🎯 Luego apuesta a: {color}  
+# ---------------- LOOP ----------------
+en_jugada = False
+senal_actual = None
+gale = 0
+contador_stats = 0
 
-📊 Confianza: ALTA  
-🔒 Empate 10% (opcional)  
-🔁 1 gale máximo  
+while True:
+    resultado = obtener_resultado()
+    historial.append(resultado)
 
-📈 Precisión: {calcular_precision()}%  
-🔥 Racha actual: {racha} greens
-"""
-    await bot.send_message(chat_id=CHAT_ID, text=texto)
+    print("Historial:", historial[-10:])
 
-async def enviar_green(bot, resultado):
-    global greens, racha
-    greens += 1
-    racha += 1
+    # 🎯 DETECTAR MÁS ACTIVO
+    if not en_jugada:
+        senal = detectar_senal(historial)
 
-    texto = f"""
-🍀🍀🍀 GREEN!!! 🍀🍀🍀
+        if senal:
+            enviar_telegram(mensaje_detectando())
+            time.sleep(1)
+            enviar_telegram(mensaje_entrada(senal))
 
-🎯 RESULTADO: {resultado}
+            en_jugada = True
+            senal_actual = senal
+            gale = 0
 
-💰 Ganancia confirmada  
-🔥 Seguimos sumando  
+    # 📊 VALIDAR RESULTADO
+    else:
+        if resultado == senal_actual or resultado == "🟡":
+            enviar_telegram(mensaje_green(senal_actual))
 
-📊 Greens: {greens} | Rojas: {rojas}  
-📈 Precisión: {calcular_precision()}%  
-🔥 Racha: {racha}
-"""
-    await bot.send_message(chat_id=CHAT_ID, text=texto)
+            wins += 1
+            racha += 1
 
-async def enviar_rojo(bot):
-    global rojas, racha
-    rojas += 1
-    racha = 0
+            if racha > max_racha:
+                max_racha = racha
 
-    texto = f"""
-❌❌❌ PERDIDA ❌❌❌
+            en_jugada = False
 
-📉 No se logró la entrada  
-🔁 Reiniciando análisis  
+        else:
+            gale += 1
 
-📊 Greens: {greens} | Rojas: {rojas}  
-📈 Precisión: {calcular_precision()}%
-"""
-    await bot.send_message(chat_id=CHAT_ID, text=texto)
+            if gale == 1:
+                enviar_telegram(mensaje_gale())
+            else:
+                losses += 1
+                racha = 0
+                en_jugada = False
 
-# 🔥 NUEVA LÓGICA MEJORADA
-def patron_fuerte(hist):
+    # 📈 MANDAR STATS CADA 5 JUGADAS
+    contador_stats += 1
+    if contador_stats >= 5:
+        mensaje_stats()
+        contador_stats = 0
 
-    # 1️⃣ RACHA
-    if len(hist) >= 3:
-        if hist[-3:] == ["🔴","🔴","🔴"]:
-            return "🔵"
-        if hist[-3:] == ["🔵","🔵","🔵"]:
-            return "🔴"
-
-    # 2️⃣ DOBLE TENDENCIA
-    if len(hist) >= 4:
-        if hist[-4:] == ["🔴","🔴","🔵","🔴"]:
-            return "🔵"
-        if hist[-4:] == ["🔵","🔵","🔴","🔵"]:
-            return "🔴"
-
-    # 3️⃣ BLOQUES
-    if len(hist) >= 5:
-        if hist[-5:] == ["🔴","🔴","🔵","🔵","🔴"]:
-            return "🔵"
-        if hist[-5:] == ["🔵","🔵","🔴","🔴","🔵"]:
-            return "🔴"
-
-    return None
-
-async def main():
-    global senal_activa, gale
-
-    bot = Bot(token=TOKEN)
-
-    await bot.send_message(chat_id=CHAT_ID, text="🔥 BOT PREMIUM ACTIVADO")
-
-    while True:
-        try:
-            res = requests.get(URL)
-            data = res.json()
-
-            resultados = []
-
-            for item in data:
-                try:
-                    r = item["data"]["result"]
-                    resultado = (
-                        r.get("wheelResult")
-                        or r.get("winner")
-                        or r.get("outcome")
-                    )
-                except:
-                    continue
-
-                convertido = convertir(resultado)
-                if convertido:
-                    resultados.append(convertido)
-
-            if resultados:
-                resultados = list(reversed(resultados))
-                ultimo = resultados[-1]
-
-                if len(historial) == 0 or historial[-1] != ultimo:
-                    historial.append(ultimo)
-
-                    print("Historial:", historial[-10:])
-
-                    # 🚫 evitar zona mala
-                    if zona_mala(historial):
-                        print("Zona mala detectada ❌")
-                        continue
-
-                    # 🔥 detectar señal
-                    if senal_activa is None:
-                        entrada = patron_fuerte(historial)
-
-                        if entrada:
-                            senal_activa = entrada
-                            gale = 0
-                            await enviar_senal(bot, entrada)
-
-                    # 🔥 resultado
-                    if senal_activa:
-                        if ultimo == senal_activa:
-                            await enviar_green(bot, ultimo)
-                            senal_activa = None
-                            gale = 0
-
-                        else:
-                            if gale == 0:
-                                gale = 1
-                                await bot.send_message(
-                                    chat_id=CHAT_ID,
-                                    text="⚠️ GALE 1\n🔁 Aplicando recuperación"
-                                )
-                            else:
-                                await enviar_rojo(bot)
-                                senal_activa = None
-                                gale = 0
-
-        except Exception as e:
-            print("Error:", e)
-
-        await asyncio.sleep(5)
-
-asyncio.run(main())
+    time.sleep(5)
