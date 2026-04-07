@@ -24,25 +24,29 @@ def enviar_telegram(msg):
         "parse_mode": "HTML"
     })
 
-# ---------------- API (CAMBIA POR LA REAL) ----------------
+# ---------------- API (SIMULADA) ----------------
 def obtener_resultado():
     return random.choice(["🔵", "🔴", "🟡"])
 
-# ---------------- DETECTOR PRO ----------------
+# ---------------- DETECTOR ----------------
 def detectar_senal(hist):
     if len(hist) < 4:
         return None
 
-    # 🔥 REPETICIÓN
+    # repetición
     if hist[-1] == hist[-2]:
         return hist[-1]
 
-    # 🔥 ALTERNANCIA
+    # alternancia
     if hist[-1] != hist[-2] and hist[-2] != hist[-3]:
         return hist[-1]
 
-    # 🔥 ROMPIMIENTO
+    # rompimiento
     if hist[-3] == hist[-2] and hist[-1] != hist[-2]:
+        return hist[-1]
+
+    # extra para más actividad 😈
+    if random.random() < 0.3:
         return hist[-1]
 
     return None
@@ -88,11 +92,11 @@ def mensaje_stats():
 
     porcentaje = (wins / total) * 100
 
-    enviar_telegram(f"""🚀 RESULTADOS HASTA AHORA
+    enviar_telegram(f"""🚀 RESULTADOS
 
 🟢 {wins}   🔴 {losses}
 
-🎯 Asertividad: {porcentaje:.2f}%
+🎯 Acierto: {porcentaje:.2f}%
 🔥 Racha actual: {racha}
 💰 Mejor racha: {max_racha}
 """)
@@ -102,6 +106,7 @@ en_jugada = False
 senal_actual = None
 gale = 0
 contador_stats = 0
+contador_analisis = 0
 
 while True:
     resultado = obtener_resultado()
@@ -109,7 +114,13 @@ while True:
 
     print("Historial:", historial[-10:])
 
-    # 🎯 DETECTAR MÁS ACTIVO
+    # 🔥 MENSAJE DE ANALISIS
+    contador_analisis += 1
+    if contador_analisis >= 6 and not en_jugada:
+        enviar_telegram("⚠️ Analizando mercado... esperando oportunidad perfecta")
+        contador_analisis = 0
+
+    # 🎯 DETECTAR
     if not en_jugada:
         senal = detectar_senal(historial)
 
@@ -122,7 +133,7 @@ while True:
             senal_actual = senal
             gale = 0
 
-    # 📊 VALIDAR RESULTADO
+    # 📊 RESULTADO
     else:
         if resultado == senal_actual or resultado == "🟡":
             enviar_telegram(mensaje_green(senal_actual))
@@ -145,7 +156,7 @@ while True:
                 racha = 0
                 en_jugada = False
 
-    # 📈 MANDAR STATS CADA 5 JUGADAS
+    # 📈 STATS
     contador_stats += 1
     if contador_stats >= 5:
         mensaje_stats()
