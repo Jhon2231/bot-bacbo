@@ -3,8 +3,8 @@ import time
 import os
 import random
 
-TOKEN = os.getenv("7961061028:AAGWm-kKUcGmYm5Z6K50-B1mge-yTU7642g")
-CHAT_ID = os.getenv("-1003704821505")
+TOKEN = os.getenv("TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
 URL = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
