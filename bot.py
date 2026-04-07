@@ -11,6 +11,7 @@ API_URL = "https://api-cs.casino.org/svc-evolution-game-events/api/bacbo?page=0&
 historial = []
 ultimo_resultado = None
 ultimo_envio = 0
+ya_iniciado = False
 
 # 📊 STATS
 wins = 0
@@ -19,15 +20,23 @@ racha = 0
 
 # ---------------- TELEGRAM ----------------
 def enviar(msg):
-    requests.post(URL_TELEGRAM, data={
-        "chat_id": CHAT_ID,
-        "text": msg
-    })
+    try:
+        requests.post(URL_TELEGRAM, data={
+            "chat_id": CHAT_ID,
+            "text": msg
+        })
+    except:
+        print("Error enviando mensaje")
 
-# ---------------- DATOS ----------------
+# ---------------- API SEGURA ----------------
 def obtener():
-    r = requests.get(API_URL).json()
-    return r["data"]
+    try:
+        r = requests.get(API_URL, timeout=10)
+        data = r.json()
+        return data.get("data", [])
+    except:
+        print("Error obteniendo datos")
+        return []
 
 def procesar(data):
     lista = []
@@ -52,9 +61,11 @@ def detectar(hist):
 
     ult = filtrado[-6:]
 
+    # 🔥 patrón fuerte
     if ult[-1] == ult[-2] == ult[-3]:
         return ult[-1]
 
+    # 🔥 rompimiento
     if ult[-3] == ult[-2] and ult[-1] != ult[-2]:
         return ult[-1]
 
@@ -85,7 +96,7 @@ def msg_green(color):
 """
 
 def msg_red():
-    return """❌❌❌ RED ❌❌❌"""
+    return "❌❌❌ RED ❌❌❌"
 
 def msg_gale():
     return "⚠️ GALE 1"
@@ -110,20 +121,23 @@ en_jugada = False
 senal = None
 gale = 0
 
-enviar("🚀 BOT BAC BO VIP ACTIVADO")
-
 while True:
     try:
+        # 🔥 SOLO UNA VEZ
+        if not ya_iniciado:
+            enviar("🚀 BOT BAC BO VIP ACTIVADO")
+            ya_iniciado = True
+
         data = obtener()
         historial = procesar(data)
 
-        if len(historial) == 0:
+        if not historial:
             time.sleep(5)
             continue
 
         ultimo = historial[-1]
 
-        # 🚨 detectar nuevo resultado real
+        # 🔥 detectar solo resultado nuevo
         if ultimo == ultimo_resultado:
             time.sleep(5)
             continue
@@ -176,4 +190,3 @@ while True:
     except Exception as e:
         print("Error:", e)
         time.sleep(10)
-    main()
