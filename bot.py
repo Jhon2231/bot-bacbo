@@ -18,36 +18,42 @@ max_racha = 0
 
 # ---------------- TELEGRAM ----------------
 def enviar_telegram(msg):
-    requests.post(URL, data={
-        "chat_id": CHAT_ID,
-        "text": msg,
-        "parse_mode": "HTML"
-    })
+    try:
+        requests.post(URL, data={
+            "chat_id": CHAT_ID,
+            "text": msg,
+            "parse_mode": "HTML"
+        })
+    except:
+        print("Error enviando mensaje")
 
 # ---------------- API (SIMULADA) ----------------
 def obtener_resultado():
     return random.choice(["🔵", "🔴", "🟡"])
 
-# ---------------- DETECTOR ----------------
+# ---------------- DETECTOR MEJORADO ----------------
 def detectar_senal(hist):
-    if len(hist) < 4:
+    # ignorar empates para análisis
+    filtrado = [x for x in hist if x != "🟡"]
+
+    if len(filtrado) < 3:
         return None
 
-    # repetición
-    if hist[-1] == hist[-2]:
-        return hist[-1]
+    # 🔥 repetición
+    if filtrado[-1] == filtrado[-2]:
+        return filtrado[-1]
 
-    # alternancia
-    if hist[-1] != hist[-2] and hist[-2] != hist[-3]:
-        return hist[-1]
+    # 🔥 alternancia
+    if filtrado[-1] != filtrado[-2] and filtrado[-2] != filtrado[-3]:
+        return filtrado[-1]
 
-    # rompimiento
-    if hist[-3] == hist[-2] and hist[-1] != hist[-2]:
-        return hist[-1]
+    # 🔥 rompimiento
+    if filtrado[-3] == filtrado[-2] and filtrado[-1] != filtrado[-2]:
+        return filtrado[-1]
 
-    # extra para más actividad 😈
-    if random.random() < 0.3:
-        return hist[-1]
+    # 🔥 más actividad
+    if random.random() < 0.4:
+        return filtrado[-1]
 
     return None
 
