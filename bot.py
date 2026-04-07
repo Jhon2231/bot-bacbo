@@ -9,161 +9,246 @@ URL_TELEGRAM = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 API_URL = "https://api-cs.casino.org/svc-evolution-game-events/api/bacbo?page=0&size=20&sort=data.settledAt,desc"
 
 historial = []
-ultimo_envio = 0
+ultimo_id = None
 
-# 📊 STATS
-wins = 0
-losses = 0
-racha = 0
+greens = 0
+rojos = 0
 
-# ---------------- TELEGRAM ----------------
-def enviar(msg):
+MAX_GALE = 1
+senal_actual = None
+gale_actual = 0
+
+
+# =========================
+# 📩 TELEGRAM
+# =========================
+def enviar_mensaje(texto):
     requests.post(URL_TELEGRAM, data={
         "chat_id": CHAT_ID,
-        "text": msg
+        "text": texto
     })
 
-# ---------------- OBTENER DATOS ----------------
-def obtener():
-    r = requests.get(API_URL).json()
-    return r["data"]
 
-def procesar(data):
-    lista = []
-    for r in data:
-        res = r["data"]["winner"]
-
-        if res == "PlayerWon":
-            lista.append("🔵")
-        elif res == "BankerWon":
-            lista.append("🔴")
-        else:
-            lista.append("🟡")
-
-    return lista[::-1]
-
-# ---------------- DETECTOR ----------------
-def detectar(hist):
-    filtrado = [x for x in hist if x != "🟡"]
-
-    if len(filtrado) < 6:
+# =========================
+# 🧠 ANALISIS PRO
+# =========================
+def analizar_pro():
+    if len(historial) < 6:
         return None
 
-    ult = filtrado[-6:]
+    ultimos = historial[-6:]
 
-    # 🔥 patrón fuerte (3 seguidos)
-    if ult[-1] == ult[-2] == ult[-3]:
-        return ult[-1]
+    rojos_count = ultimos.count("🔴")
+    azules_count = ultimos.count("🔵")
 
-    # 🔥 rompimiento
-    if ult[-3] == ult[-2] and ult[-1] != ult[-2]:
-        return ult[-1]
+    # 🚫 EVITAR CAOS (alternancia total)
+    alternando = True
+    for i in range(len(ultimos) - 1):
+        if ultimos[i] == ultimos[i + 1]:
+            alternando = False
+            break
+
+    if alternando:
+        return None
+
+    # 🔥 RACHA FUERTE
+    if ultimos[-1] == ultimos[-2] == ultimos[-3]:
+        return "contrario"
+
+    # 📈 TENDENCIA
+    if rojos_count >= 4:
+        return "rojo"
+
+    if azules_count >= 4:
+        return "azul"
+
+    # ⚡ RUPTURA
+    if ultimos[-2] == ultimos[-3] == ultimos[-4] and ultimos[-1] != ultimos[-2]:
+        return "continuar"
 
     return None
 
-# ---------------- MENSAJES ----------------
-def msg_entrada(color):
-    contra = "🔴" if color == "🔵" else "🔵"
 
-    return f"""✅ ENTRADA CONFIRMADA ✅
+# =========================
+# 🎯 SEÑAL
+# =========================
+def generar_senal_pro():
+    analisis = analizar_pro()
+
+    if not analisis:
+        return None
+
+    ultimo = historial[-1]
+
+    if analisis == "contrario":
+        return "🔵" if ultimo == "🔴" else "🔴"
+
+    if analisis == "continuar":
+        return ultimo
+
+    if analisis == "rojo":
+        return "🔴"
+
+    if analisis == "azul":
+        return "🔵"
+
+    return None
+
+
+# =========================
+# 🚫 FILTRO EXTRA
+# =========================
+def filtro_calidad():
+    if len(historial) < 6:
+        return False
+
+    ultimos = historial[-6:]
+
+    # 3 vs 3 = inestable
+    if ultimos.count("🔴") == 3 and ultimos.count("🔵") == 3:
+        return False
+
+    return True
+
+
+# =========================
+# 🧾 MENSAJES (TUS DISEÑOS)
+# =========================
+def mensaje_senal(color):
+    return f"""
+✅ ENTRADA CONFIRMADA ✅
 
 🎰 Juego: Bac Bo - Evolution
-
-🧨 INGRESAR DESPUÉS: {contra}
-🔥 APOSTAR EN: {color}
+💣 INGRESAR DESPUÉS: 🔵
+🔥 APUESTA EN: {color}
 
 🔒 PROTEGER EMPATE con 10% (Opcional)
 
-🔁 MÁXIMO 1 GALE
+🔁 MÁXIMO {MAX_GALE} GALE
 """
 
-def msg_green(color):
-    return f"""🍀🍀🍀 GREEN!!! 🍀🍀🍀
 
-✅ RESULTADO: COLOR {color} / 🟡
+def mensaje_green():
+    return f"""
+🍀🍀🍀 GREEN!!! 🍀🍀🍀
+
+✅ RESULTADO: COLOR 🔴/🟠
 
 ¡Hemos acertado de nuevo!
 """
 
-def msg_red():
-    return "❌ RED"
 
-def msg_gale():
-    return "⚠️ GALE 1"
+def mensaje_red():
+    return f"""
+❌ RED ❌
 
-def msg_stats():
-    total = wins + losses
-    if total == 0:
-        return
+Seguimos con gestión.
+"""
 
-    porcentaje = (wins / total) * 100
 
-    enviar(f"""🚀 Resultados hasta el momento:
+def mensaje_stats():
+    total = greens + rojos
+    porcentaje = (greens / total * 100) if total > 0 else 0
 
-🟢 {wins}   🔴 {losses}
+    return f"""
+🚀 Resultados hasta el momento:
+🟢 {greens} 🔴 {rojos}
 
 🎯 Asertividad {porcentaje:.2f}%
-🔥 Racha actual: {racha}
-""")
+"""
 
-# ---------------- LOOP ----------------
-en_jugada = False
-senal = None
-gale = 0
 
-while True:
+# =========================
+# 📡 API BAC BO
+# =========================
+def obtener_resultados():
     try:
-        data = obtener()
-        nuevo_hist = procesar(data)
+        res = requests.get(API_URL).json()
+        juegos = res["content"]
 
-        if nuevo_hist != historial:
-            historial = nuevo_hist
+        resultados = []
 
-            print(historial[-10:])
+        for juego in juegos:
+            game_id = juego["id"]
 
-            tiempo = time.time()
+            player = juego["data"]["playerScore"]
+            banker = juego["data"]["bankerScore"]
 
-            # 🎯 ENTRADA
-            if not en_jugada:
-                posible = detectar(historial)
-
-                if posible and (tiempo - ultimo_envio > 240):
-                    enviar(msg_entrada(posible))
-
-                    en_jugada = True
-                    senal = posible
-                    gale = 0
-                    ultimo_envio = tiempo
-
-            # 📊 RESULTADO
+            if player > banker:
+                color = "🔵"
+            elif banker > player:
+                color = "🔴"
             else:
-                ultimo = historial[-1]
+                continue  # ignorar empate
 
-                if ultimo == senal or ultimo == "🟡":
-                    enviar(msg_green(senal))
+            resultados.append((game_id, color))
 
-                    wins += 1
-                    racha += 1
-                    en_jugada = False
-
-                else:
-                    gale += 1
-
-                    if gale == 1:
-                        enviar(msg_gale())
-                    else:
-                        enviar(msg_red())
-
-                        losses += 1
-                        racha = 0
-                        en_jugada = False
-
-            # 📈 stats cada cierto tiempo
-            if (wins + losses) % 5 == 0:
-                msg_stats()
-
-        time.sleep(10)
+        return resultados[::-1]
 
     except Exception as e:
-        print("Error:", e)
-        time.sleep(10)
+        print("Error API:", e)
+        return []
+
+
+# =========================
+# 🚀 LOOP PRINCIPAL
+# =========================
+def main():
+    global ultimo_id, historial
+    global greens, rojos
+    global senal_actual, gale_actual
+
+    print("Bot PRO corriendo...")
+
+    while True:
+        resultados = obtener_resultados()
+
+        for game_id, color in resultados:
+
+            if game_id == ultimo_id:
+                continue
+
+            ultimo_id = game_id
+            historial.append(color)
+
+            print("Nuevo resultado:", color)
+
+            # =========================
+            # 🎯 EVALUAR SEÑAL ACTIVA
+            # =========================
+            if senal_actual:
+                if color == senal_actual:
+                    greens += 1
+                    enviar_mensaje(mensaje_green())
+                    enviar_mensaje(mensaje_stats())
+                    senal_actual = None
+                    gale_actual = 0
+                else:
+                    gale_actual += 1
+
+                    if gale_actual > MAX_GALE:
+                        rojos += 1
+                        enviar_mensaje(mensaje_red())
+                        enviar_mensaje(mensaje_stats())
+                        senal_actual = None
+                        gale_actual = 0
+
+            # =========================
+            # 🧠 NUEVA SEÑAL (PRO)
+            # =========================
+            if not senal_actual:
+                if filtro_calidad():
+                    nueva = generar_senal_pro()
+
+                    if nueva:
+                        senal_actual = nueva
+                        enviar_mensaje(mensaje_senal(senal_actual))
+
+        time.sleep(5)
+
+
+# =========================
+# ▶️ START
+# =========================
+if __name__ == "__main__":
+    main()
