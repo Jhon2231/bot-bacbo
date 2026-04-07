@@ -1,118 +1,169 @@
 import requests
 import time
 import os
-import random
 
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-URL = f"https://api.telegram.org/bot{TOKEN}"
+URL_TELEGRAM = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+API_URL = "https://api-cs.casino.org/svc-evolution-game-events/api/bacbo?page=0&size=20&sort=data.settledAt,desc"
 
 historial = []
-
 ultimo_envio = 0
 
+# 📊 STATS
+wins = 0
+losses = 0
+racha = 0
+
 # ---------------- TELEGRAM ----------------
-def enviar_telegram(msg):
-    r = requests.post(f"{URL}/sendMessage", data={
+def enviar(msg):
+    requests.post(URL_TELEGRAM, data={
         "chat_id": CHAT_ID,
         "text": msg
     })
-    return r.json()
 
-def borrar_mensaje(message_id):
-    requests.post(f"{URL}/deleteMessage", data={
-        "chat_id": CHAT_ID,
-        "message_id": message_id
-    })
+# ---------------- OBTENER DATOS ----------------
+def obtener():
+    r = requests.get(API_URL).json()
+    return r["data"]
 
-# ---------------- RESULTADOS ----------------
-def obtener_resultado():
-    return random.choice(["🔵", "🔴", "🟡"])
+def procesar(data):
+    lista = []
+    for r in data:
+        res = r["data"]["winner"]
+
+        if res == "PlayerWon":
+            lista.append("🔵")
+        elif res == "BankerWon":
+            lista.append("🔴")
+        else:
+            lista.append("🟡")
+
+    return lista[::-1]
 
 # ---------------- DETECTOR ----------------
-def detectar_pre_senal(hist):
+def detectar(hist):
     filtrado = [x for x in hist if x != "🟡"]
 
-    if len(filtrado) < 4:
+    if len(filtrado) < 6:
         return None
 
-    # posible patrón
-    if filtrado[-1] == filtrado[-2]:
-        return filtrado[-1]
+    ult = filtrado[-6:]
+
+    # 🔥 patrón fuerte (3 seguidos)
+    if ult[-1] == ult[-2] == ult[-3]:
+        return ult[-1]
+
+    # 🔥 rompimiento
+    if ult[-3] == ult[-2] and ult[-1] != ult[-2]:
+        return ult[-1]
 
     return None
 
-def confirmar_senal(hist, color):
-    filtrado = [x for x in hist if x != "🟡"]
-
-    if len(filtrado) < 5:
-        return False
-
-    # confirmación fuerte
-    if filtrado[-1] == color:
-        return True
-
-    return False
-
 # ---------------- MENSAJES ----------------
-def msg_detectando():
-    return "⚠️ Detectando oportunidad..."
-
 def msg_entrada(color):
     contra = "🔴" if color == "🔵" else "🔵"
-    return f"""🎯 ENTRADA CONFIRMADA
 
-🎰 Bac Bo
+    return f"""✅ ENTRADA CONFIRMADA ✅
 
-📥 Entrar después de: {contra}
-🔥 Apostar: {color}
+🎰 Juego: Bac Bo - Evolution
 
-🛡 Proteger empate
-♻️ 1 gale
+🧨 INGRESAR DESPUÉS: {contra}
+🔥 APOSTAR EN: {color}
+
+🔒 PROTEGER EMPATE con 10% (Opcional)
+
+🔁 MÁXIMO 1 GALE
 """
+
+def msg_green(color):
+    return f"""🍀🍀🍀 GREEN!!! 🍀🍀🍀
+
+✅ RESULTADO: COLOR {color} / 🟡
+
+¡Hemos acertado de nuevo!
+"""
+
+def msg_red():
+    return "❌ RED"
+
+def msg_gale():
+    return "⚠️ GALE 1"
+
+def msg_stats():
+    total = wins + losses
+    if total == 0:
+        return
+
+    porcentaje = (wins / total) * 100
+
+    enviar(f"""🚀 Resultados hasta el momento:
+
+🟢 {wins}   🔴 {losses}
+
+🎯 Asertividad {porcentaje:.2f}%
+🔥 Racha actual: {racha}
+""")
 
 # ---------------- LOOP ----------------
 en_jugada = False
-pre_senal = None
-msg_id = None
+senal = None
+gale = 0
 
 while True:
-    resultado = obtener_resultado()
-    historial.append(resultado)
+    try:
+        data = obtener()
+        nuevo_hist = procesar(data)
 
-    print(historial[-10:])
+        if nuevo_hist != historial:
+            historial = nuevo_hist
 
-    if not en_jugada:
+            print(historial[-10:])
 
-        # detectar posible señal
-        posible = detectar_pre_senal(historial)
+            tiempo = time.time()
 
-        if posible and not pre_senal:
-            res = enviar_telegram(msg_detectando())
-            msg_id = res["result"]["message_id"]
-            pre_senal = posible
+            # 🎯 ENTRADA
+            if not en_jugada:
+                posible = detectar(historial)
 
-        # confirmar señal
-        if pre_senal:
-            if confirmar_senal(historial, pre_senal):
-                enviar_telegram(msg_entrada(pre_senal))
-                en_jugada = True
-                pre_senal = None
+                if posible and (tiempo - ultimo_envio > 240):
+                    enviar(msg_entrada(posible))
 
+                    en_jugada = True
+                    senal = posible
+                    gale = 0
+                    ultimo_envio = tiempo
+
+            # 📊 RESULTADO
             else:
-                # si ya pasaron ciclos y no confirma → borrar
-                if len(historial) > 6:
-                    borrar_mensaje(msg_id)
-                    pre_senal = None
+                ultimo = historial[-1]
 
-    else:
-        # simulación resultado
-        if resultado == pre_senal or resultado == "🟡":
-            enviar_telegram("🍀 GREEN")
-            en_jugada = False
-        else:
-            enviar_telegram("❌ RED")
-            en_jugada = False
+                if ultimo == senal or ultimo == "🟡":
+                    enviar(msg_green(senal))
 
-    time.sleep(10)
+                    wins += 1
+                    racha += 1
+                    en_jugada = False
+
+                else:
+                    gale += 1
+
+                    if gale == 1:
+                        enviar(msg_gale())
+                    else:
+                        enviar(msg_red())
+
+                        losses += 1
+                        racha = 0
+                        en_jugada = False
+
+            # 📈 stats cada cierto tiempo
+            if (wins + losses) % 5 == 0:
+                msg_stats()
+
+        time.sleep(10)
+
+    except Exception as e:
+        print("Error:", e)
+        time.sleep(10)
